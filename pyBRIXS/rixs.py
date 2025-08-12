@@ -59,8 +59,8 @@ class analysis:
                     max(self.w_core)-min(rixs.w),grid[0])
             self.y=np.linspace(min(self.w_core),max(self.w_core),num=grid[1])
             #interpolate data
-            self.__interpolate_data__(rixs)
-
+            self.__interpolate_data__(rixs)       
+    
     def __interpolate_data__(self,rixs):
         points_loss=np.zeros((rixs.w.shape[0]*self.w_core.shape[0],2))
         points_em=np.zeros((rixs.w.shape[0]*self.w_core.shape[0],2))
@@ -105,6 +105,25 @@ class analysis:
         rixs_.w_emission=data_['w_emission']
 
         return rixs_, visual_
+    
+    @staticmethod
+    def average_rixs(rixs_list, w_core, grid=np.array([]), method='linear', fill_value=0, rescale=False):
+        """
+        Erzeugt ein `analysis`-Objekt mit gemittelten Daten aus mehreren RIXS-Rechnungen.
+
+        Returns:
+            analysis: Ein `analysis`-Objekt mit gemittelten Daten.
+        """
+        if not all(np.array_equal(rixs_list[0].w, r.w) for r in rixs_list):
+            raise ValueError("Energy range has to be the same.")
+        
+        avg_spectrum = np.mean([r.spectrum for r in rixs_list], axis=0)
+        
+        avg_rixs = rixs()
+        avg_rixs.w = rixs_list[0].w 
+        avg_rixs.spectrum = avg_spectrum
+        
+        return analysis(avg_rixs, w_core, grid=grid, method=method, fill_value=fill_value, rescale=rescale)
 
 class rixs:
     """
@@ -151,7 +170,7 @@ class rixs:
 
     def __get_oscstr__(self):
         with h5py.File(self.file) as f:
-            self.energy=np.asarray(list(f['evals']))
+            self.energy=np.asarray(list(f['vevals']))
             nfreq=len(list(f['oscstr']))
             self.oscstr=[]
             for i in range(nfreq):
