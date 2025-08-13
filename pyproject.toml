@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyBRIXS"
+version = "1.0.0"
+description = "Python tools to post process BRIXS results."
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+	{ name = "Christian Vorwerk"}, 
+	{ name = "Elias Richter", email = "richtere@physik.hu-berlin.de"},
+	{ name = "Benedikt Maurer", email = "maurerbe@physik.hu-berlin.de"},
+	{ name = "Claudia Draxl", email = "claudia.draxl@physik.hu-berlin.de"},
+]
+license = { text = "GPLv3" }
+dependencies = [
+  "numpy",
+  "scipy",
+  "matplotlib",
+  "h5py",
+]
+
+[project.urls]
+Homepage = "https://exciting-code.org/"
+Repository = "https://github.com/exciting/pyBRIXS"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
