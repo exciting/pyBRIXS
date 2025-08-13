@@ -1,4 +1,6 @@
-# python intermediate files
-*.egg-info/
 __pycache__/
-
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
