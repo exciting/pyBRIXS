@@ -109,10 +109,10 @@ class analysis:
     @staticmethod
     def average_rixs(rixs_list, w_core, grid=np.array([]), method='linear', fill_value=0, rescale=False):
         """
-        Erzeugt ein `analysis`-Objekt mit gemittelten Daten aus mehreren RIXS-Rechnungen.
+        Creates an `analysis`-object with averaged data from multiple RIXS-calculations.
 
         Returns:
-            analysis: Ein `analysis`-Objekt mit gemittelten Daten.
+            analysis: `analysis`-object with averaged data.
         """
         if not all(np.array_equal(rixs_list[0].w, r.w) for r in rixs_list):
             raise ValueError("Energy range has to be the same.")
@@ -156,8 +156,12 @@ class rixs:
     def __init__(self, file=None, broad=None, freq=np.array([])):
         self.delta_e=None
         self.oscstr=None
+        self.oscstr_coh=None
+        self.oscstr_incoh=None
         self.w=None
         self.spectrum=None
+        self.spectrum_coh=None
+        self.spectrum_incoh=None
         if file != None and broad !=None:
             self.file=file
             self.broad=broad
@@ -167,39 +171,78 @@ class rixs:
             self.set_spectrum()
             self.gen_spectrum()
         
-
     def __get_oscstr__(self):
         with h5py.File(self.file) as f:
-            self.energy=np.asarray(list(f['vevals']))
-            nfreq=len(list(f['oscstr']))
-            self.oscstr=[]
+            self.energy = np.asarray(list(f["vevals"]))
+            nfreq = len(list(f["oscstr"]))
+
+            self.oscstr = []
+            self.oscstr_coh = []
+            self.oscstr_incoh = []
+
             for i in range(nfreq):
-                nexciton=len(list(f['oscstr'][format(i+1,'04d')]))
-                oscstr_p=[]
-                for j in range(nexciton):
-                    inter=f['oscstr'][format(i+1,'04d')][j][0]\
-                            +1j*f['oscstr'][format(i+1,'04d')][j][1]
-                    oscstr_p.append(inter)
-                self.oscstr.append(oscstr_p)
-            self.oscstr=np.asarray(self.oscstr)
-        del oscstr_p
-    
+                group = f["oscstr"][format(i+1, "04d")]
+                keys = list(group.keys())
+
+                # classic
+                normal_keys = [k for k in keys if k not in ("coherent", "incoherent")]
+                if normal_keys:
+                    oscstr_p = []
+                    for k in normal_keys:
+                        inter = group[k][0] + 1j * group[k][1]
+                        oscstr_p.append(inter)
+                    self.oscstr.append(oscstr_p)
+
+                # coherent
+                if "coherent" in keys:
+                    data = group["coherent"]
+                    arr = data[:,0] + 1j * data[:,1] 
+                    self.oscstr_coh.append(arr)
+
+                # incoherent
+                if "incoherent" in keys:
+                    data = group["incoherent"]
+                    arr = data[:,0] + 1j * data[:,1]
+                    self.oscstr_incoh.append(arr)
+
+            self.oscstr = np.array(self.oscstr) if self.oscstr else None
+            self.oscstr_coh = np.vstack(self.oscstr_coh) if self.oscstr_coh else None
+            self.oscstr_incoh = np.vstack(self.oscstr_incoh) if self.oscstr_incoh else None
+            
     def set_spectrum(self):
-        #create matrix to hold Lorenztian broadening with broadening of
-        #self.broad
-        hartree=scipy.constants.physical_constants['Hartree energy in eV'][0]
-        self.delta_e=np.zeros((self.w.shape[0],self.oscstr.shape[1]),\
-                dtype=np.complex64)
+        hartree = scipy.constants.physical_constants['Hartree energy in eV'][0]
+        if self.oscstr is not None:
+            osc = self.oscstr
+        elif self.oscstr_coh is not None:
+            osc = self.oscstr_coh
+        elif self.oscstr_incoh is not None:
+            osc = self.oscstr_incoh
+
+
+        self.delta_e = np.zeros((self.w.shape[0], osc.shape[1]), dtype=np.complex64)
         for i in range(self.delta_e.shape[0]):
             for j in range(self.delta_e.shape[1]):
-                self.delta_e[i,j]=1.0/(self.w[i]/hartree-self.energy[j]\
-                        +1j*self.broad/hartree)
-    
+                self.delta_e[i,j] = 1.0 / (self.w[i]/hartree - self.energy[j] + 1j*self.broad/hartree)
+
     def gen_spectrum(self):
-        self.spectrum=np.zeros((self.oscstr.shape[0],self.w.shape[0]))
-        for i in range(self.spectrum.shape[0]):
-            self.spectrum[i,:]=\
-                    -1.0*np.matmul(self.delta_e,np.abs(self.oscstr[i,:])**2).imag
+        if self.oscstr is not None:
+            self.spectrum = np.zeros((self.oscstr.shape[0], self.w.shape[0]))
+            for i in range(self.spectrum.shape[0]):
+                self.spectrum[i,:] = \
+                    -1.0*np.matmul(self.delta_e, np.abs(self.oscstr[i,:])**2).imag
+
+        if self.oscstr_coh is not None:
+            self.spectrum_coh = np.zeros((self.oscstr_coh.shape[0], self.w.shape[0]))
+            for i in range(self.spectrum_coh.shape[0]):
+                self.spectrum_coh[i,:] = \
+                    -1.0*np.matmul(self.delta_e, np.abs(self.oscstr_coh[i,:])**2).imag
+
+        if self.oscstr_incoh is not None:
+            self.spectrum_incoh = np.zeros((self.oscstr_incoh.shape[0], self.w.shape[0]))
+            for i in range(self.spectrum_incoh.shape[0]):
+                self.spectrum_incoh[i,:] = \
+                    -1.0*np.matmul(self.delta_e, np.abs(self.oscstr_incoh[i,:])**2).imag
+
     
     def gen_emission_en(self,w_core):
         self.w_emission=[]
