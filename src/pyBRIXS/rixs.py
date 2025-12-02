@@ -182,33 +182,41 @@ class rixs:
 
             for i in range(nfreq):
                 group = f["oscstr"][format(i+1, "04d")]
-                keys = list(group.keys())
+                if isinstance(group, h5py.Group):
+                    keys = list(group.keys())
+                    # classic
+                    normal_keys = [k for k in keys if k not in ("coherent", "incoherent")]
+                    if normal_keys:
+                        oscstr_p = []
+                        for k in normal_keys:
+                            inter = group[k][0] + 1j * group[k][1]
+                            oscstr_p.append(inter)
+                        self.oscstr.append(oscstr_p)
 
-                # classic
-                normal_keys = [k for k in keys if k not in ("coherent", "incoherent")]
-                if normal_keys:
-                    oscstr_p = []
-                    for k in normal_keys:
-                        inter = group[k][0] + 1j * group[k][1]
+                    # coherent
+                    if "coherent" in keys:
+                        data = group["coherent"]
+                        arr = data[:,0] + 1j * data[:,1] 
+                        self.oscstr_coh.append(arr)
+
+                    # incoherent
+                    if "incoherent" in keys:
+                        data = group["incoherent"]
+                        arr = data[:,0] + 1j * data[:,1]
+                        self.oscstr_incoh.append(arr)
+
+                else:
+                    nexciton=len(list(f['oscstr'][format(i+1,'04d')]))
+                    oscstr_p=[]
+                    for j in range(nexciton):
+                        inter=f['oscstr'][format(i+1,'04d')][j][0]\
+                            +1j*f['oscstr'][format(i+1,'04d')][j][1]
                         oscstr_p.append(inter)
                     self.oscstr.append(oscstr_p)
-
-                # coherent
-                if "coherent" in keys:
-                    data = group["coherent"]
-                    arr = data[:,0] + 1j * data[:,1] 
-                    self.oscstr_coh.append(arr)
-
-                # incoherent
-                if "incoherent" in keys:
-                    data = group["incoherent"]
-                    arr = data[:,0] + 1j * data[:,1]
-                    self.oscstr_incoh.append(arr)
 
             self.oscstr = np.array(self.oscstr) if self.oscstr else None
             self.oscstr_coh = np.vstack(self.oscstr_coh) if self.oscstr_coh else None
             self.oscstr_incoh = np.vstack(self.oscstr_incoh) if self.oscstr_incoh else None
-            
     def set_spectrum(self):
         hartree = scipy.constants.physical_constants['Hartree energy in eV'][0]
         if self.oscstr is not None:
