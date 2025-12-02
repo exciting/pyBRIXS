@@ -31,3 +31,6 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[project.scripts]
+pyBRIXS-ddcs = "pyBRIXS.ddcs:main"
