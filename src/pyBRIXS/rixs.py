@@ -47,8 +47,9 @@ class analysis:
     """
 
     def __init__(self, rixs, w_core, grid=np.array([]), method='linear',\
-            fill_value=0, rescale=False):
+            fill_value=0, rescale=False, spectrum_attr='spectrum'):
         self.w_core=w_core
+        self.spectrum_attr=spectrum_attr
         if grid.shape[0] != 0:
             self.grid=grid
             self.method=method
@@ -62,6 +63,9 @@ class analysis:
             self.__interpolate_data__(rixs)       
     
     def __interpolate_data__(self,rixs):
+        spectrum=getattr(rixs,self.spectrum_attr)
+        if spectrum is None:
+            raise ValueError("RIXS object does not contain '{}' data.".format(self.spectrum_attr))
         points_loss=np.zeros((rixs.w.shape[0]*self.w_core.shape[0],2))
         points_em=np.zeros((rixs.w.shape[0]*self.w_core.shape[0],2))
         z=np.zeros(rixs.w.shape[0]*self.w_core.shape[0])
@@ -72,7 +76,7 @@ class analysis:
                 points_loss[counter,1]=self.w_core[i]
                 points_em[counter,0]=self.w_core[i]-rixs.w[j]
                 points_em[counter,1]=self.w_core[i]
-                z[counter]=rixs.spectrum[i,j]
+                z[counter]=spectrum[i,j]
                 counter=counter+1
 
         #actual interpolation
@@ -85,15 +89,21 @@ class analysis:
                 rescale=self.rescale)
     
     def export(self,rixs,w_core,filepath):
+        spectrum=getattr(rixs,self.spectrum_attr)
+        w_emission=getattr(rixs,'w_emission',None)
+        if w_emission is None:
+            w_emission=np.asarray([[w-wloss for wloss in rixs.w] for w in w_core])
         np.savez_compressed(filepath, xl=self.xl, xe=self.xe, zl=self.zl,\
-                ze=self.ze, w=rixs.w, spectrum=rixs.spectrum, y=self.y,\
-                w_emission=rixs.w_emission, w_core=w_core, grid=self.grid)
+                ze=self.ze, w=rixs.w, spectrum=spectrum, y=self.y,\
+                w_emission=w_emission, w_core=w_core, grid=self.grid,\
+                spectrum_attr=self.spectrum_attr)
     
     @staticmethod
     def from_file(filepath):
         data_=np.load(filepath)
         rixs_=rixs()
-        visual_=analysis(rixs=rixs_,w_core=data_['w_core'])
+        spectrum_attr=data_['spectrum_attr'].item() if 'spectrum_attr' in data_ else 'spectrum'
+        visual_=analysis(rixs=rixs_,w_core=data_['w_core'],spectrum_attr=spectrum_attr)
         visual_.xl=data_['xl']
         visual_.xe=data_['xe']
         visual_.y=data_['y']
@@ -101,29 +111,39 @@ class analysis:
         visual_.ze=data_['ze']
         visual_.grid=data_['grid']
         rixs_.w=data_['w']
-        rixs_.spectrum=data_['spectrum']
+        setattr(rixs_,spectrum_attr,data_['spectrum'])
         rixs_.w_emission=data_['w_emission']
 
         return rixs_, visual_
     
     @staticmethod
-    def average_rixs(rixs_list, w_core, grid=np.array([]), method='linear', fill_value=0, rescale=False):
+    def average_rixs(rixs_list, w_core, grid=np.array([]), method='linear', fill_value=0, rescale=False, spectrum_attr='spectrum'):
         """
         Creates an `analysis`-object with averaged data from multiple RIXS-calculations.
 
         Returns:
             analysis: `analysis`-object with averaged data.
         """
+        if not rixs_list:
+            raise ValueError("rixs_list must not be empty.")
         if not all(np.array_equal(rixs_list[0].w, r.w) for r in rixs_list):
             raise ValueError("Energy range has to be the same.")
+
+        spectra=[getattr(r,spectrum_attr) for r in rixs_list]
+        if not all(s is not None for s in spectra):
+            raise ValueError("All RIXS objects must contain '{}' data.".format(spectrum_attr))
+        if not all(spectra[0].shape == s.shape for s in spectra):
+            raise ValueError("Spectrum shapes have to be the same.")
+        if spectra[0].shape[0] != len(w_core):
+            raise ValueError("Number of excitation energies and spectrum rows differ.")
         
-        avg_spectrum = np.mean([r.spectrum for r in rixs_list], axis=0)
+        avg_spectrum = np.mean(spectra, axis=0)
         
         avg_rixs = rixs()
         avg_rixs.w = rixs_list[0].w 
-        avg_rixs.spectrum = avg_spectrum
+        setattr(avg_rixs,spectrum_attr,avg_spectrum)
         
-        return analysis(avg_rixs, w_core, grid=grid, method=method, fill_value=fill_value, rescale=rescale)
+        return analysis(avg_rixs, w_core, grid=grid, method=method, fill_value=fill_value, rescale=rescale, spectrum_attr=spectrum_attr)
 
 class rixs:
     """
