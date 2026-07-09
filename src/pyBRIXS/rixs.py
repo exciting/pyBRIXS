@@ -97,6 +97,34 @@ class analysis:
                 ze=self.ze, w=rixs.w, spectrum=spectrum, y=self.y,\
                 w_emission=w_emission, w_core=w_core, grid=self.grid,\
                 spectrum_attr=self.spectrum_attr)
+
+    def save(self, filepath):
+        """
+        Save the interpolated RIXS map to a compressed NumPy file.
+
+        This stores only the map data needed for plotting or reloading the
+        analysis object. It does not store the underlying oscillator strengths.
+        """
+        np.savez_compressed(filepath, xl=self.xl, xe=self.xe, zl=self.zl,\
+                ze=self.ze, y=self.y, w_core=self.w_core, grid=self.grid,\
+                spectrum_attr=self.spectrum_attr)
+
+    @staticmethod
+    def load(filepath):
+        """
+        Load an interpolated RIXS map saved with analysis.save() or export().
+        """
+        data_=np.load(filepath)
+        rixs_=rixs()
+        spectrum_attr=data_['spectrum_attr'].item() if 'spectrum_attr' in data_ else 'spectrum'
+        visual_=analysis(rixs=rixs_,w_core=data_['w_core'],spectrum_attr=spectrum_attr)
+        visual_.xl=data_['xl']
+        visual_.xe=data_['xe']
+        visual_.y=data_['y']
+        visual_.zl=data_['zl']
+        visual_.ze=data_['ze']
+        visual_.grid=data_['grid']
+        return visual_
     
     @staticmethod
     def from_file(filepath):
