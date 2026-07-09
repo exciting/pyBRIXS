@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-import h5py
 import numpy as np
 
 from pyBRIXS.ddcs import GetData, SPECTRUM_MODES
@@ -24,12 +23,12 @@ def find_rixs_files(paths):
     return files
 
 
-def read_core_energies(rixs_file):
-    """
-    Read the excitation-energy axis from a BRIXS rixs.h5 file.
-    """
-    with h5py.File(rixs_file, "r") as h5:
-        return np.asarray(h5["cevals"])
+def _require_incident_energies(ecore):
+    if ecore is None:
+        raise ValueError(
+            "Incident energies are required. Pass ecore=omega from the BRIXS input."
+        )
+    return np.asarray(ecore)
 
 
 def load_rixs(paths, broad, eloss):
@@ -102,12 +101,9 @@ def calculate_ddcs(paths, broad, eloss, ecore=None, modes="auto", normalize=True
         dict: mode -> GetData object. The intensity array is available as
         result[mode].ddcs.
     """
-    files = find_rixs_files(paths)
-    if ecore is None:
-        ecore = read_core_energies(files[0])
-
-    rixs_list = load_rixs(files, broad=broad, eloss=eloss)
+    rixs_list = load_rixs(paths, broad=broad, eloss=eloss)
     modes = _selected_modes(rixs_list, modes)
+    ecore = _require_incident_energies(ecore)
     ecore = _match_core_energies(ecore, rixs_list, modes)
     ecoreindex = list(range(len(ecore)))
     result = {}
@@ -136,12 +132,9 @@ def calculate_maps(paths, broad, eloss, ecore=None, modes="auto", grid_scale=10)
     Returns:
         dict: mode -> analysis object.
     """
-    files = find_rixs_files(paths)
-    if ecore is None:
-        ecore = read_core_energies(files[0])
-
-    rixs_list = load_rixs(files, broad=broad, eloss=eloss)
+    rixs_list = load_rixs(paths, broad=broad, eloss=eloss)
     modes = _selected_modes(rixs_list, modes)
+    ecore = _require_incident_energies(ecore)
     ecore = _match_core_energies(ecore, rixs_list, modes)
     grid = np.array([len(eloss) * grid_scale, len(ecore) * grid_scale])
     result = {}
@@ -257,11 +250,17 @@ def write_ddcs(ddcs_by_mode, output_base="ddcs_vs_loss"):
     For classic data this writes output_base. For coherent/incoherent data it
     writes output_base_coherent and output_base_incoherent.
     """
+    if hasattr(ddcs_by_mode, "write_ddcs"):
+        output_file = Path(output_base)
+        with output_file.open("w") as handle:
+            ddcs_by_mode.write_ddcs(handle)
+        return [str(output_file)]
+
     written = []
     for mode, ddcs in ddcs_by_mode.items():
         _, suffix = SPECTRUM_MODES[mode]
         output_file = Path("{}{}".format(output_base, suffix))
         with output_file.open("w") as handle:
             ddcs.write_ddcs(handle)
-        written.append(output_file)
+        written.append(str(output_file))
     return written

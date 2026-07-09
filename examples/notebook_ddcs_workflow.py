@@ -12,7 +12,11 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-from pyBRIXS.workflow import calculate_ddcs, calculate_maps, write_ddcs
+from pyBRIXS.workflow import (
+    calculate_ddcs,
+    calculate_or_load_maps,
+    write_ddcs,
+)
 
 
 # %% [markdown]
@@ -46,6 +50,7 @@ rixs_files = [
 # %%
 broad = 0.5
 eloss = np.arange(0.0, 15.0, 0.05)
+ecore = np.array([653.0, 654.0, 655.0, 656.0])
 
 
 # %% [markdown]
@@ -61,6 +66,7 @@ ddcs = calculate_ddcs(
     rixs_files,
     broad=broad,
     eloss=eloss,
+    ecore=ecore,
     modes="auto",
     normalize=True,
 )
@@ -99,12 +105,14 @@ written_files
 # Maps require interpolation. Use this only when you want a 2D map.
 
 # %%
-maps = calculate_maps(
+maps = calculate_or_load_maps(
     rixs_files,
     broad=broad,
     eloss=eloss,
+    ecore=ecore,
     modes="auto",
     grid_scale=10,
+    cache_base="rixs_map_avg",
 )
 
 maps.keys()
