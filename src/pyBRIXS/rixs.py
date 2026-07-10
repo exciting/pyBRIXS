@@ -195,6 +195,10 @@ class rixs:
             is the number of excitation energies, the second dimension the
             number of optical excitations.
 
+        .. attribute:: omega
+
+            1D numpy array of incident frequencies. Entry ``omega[i]`` corresponds to  ``/oscstr/{i+1:04d}``. ``None`` for legacy files
+
         .. attribute:: spectrum
 
             2D real numpy array of RIXS spectrum. First dimension is the number
@@ -206,6 +210,7 @@ class rixs:
         self.oscstr=None
         self.oscstr_coh=None
         self.oscstr_incoh=None
+        self.omega=None
         self.w=None
         self.spectrum=None
         self.spectrum_coh=None
@@ -223,6 +228,16 @@ class rixs:
         with h5py.File(self.file) as f:
             self.energy = np.asarray(list(f["vevals"]))
             nfreq = len(list(f["oscstr"]))
+
+            if "omega" in f:
+                self.omega = np.asarray(f["omega"]["values"])
+                if len(self.omega) != nfreq:
+                    raise ValueError(
+                        "Inconsistent RIXS data: '/omega/values' contains {} entries, "
+                        "but '/oscstr' contains {} entries.".format(
+                            len(self.omega), nfreq
+                        )
+                    )
 
             self.oscstr = []
             self.oscstr_coh = []

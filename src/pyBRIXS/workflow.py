@@ -23,12 +23,21 @@ def find_rixs_files(paths):
     return files
 
 
-def _require_incident_energies(ecore):
-    if ecore is None:
-        raise ValueError(
-            "Incident energies are required. Pass ecore=omega from the BRIXS input."
-        )
-    return np.asarray(ecore)
+def _require_incident_energies(ecore, rixs_list):
+    if ecore is not None:
+        return np.asarray(ecore)
+
+    for item in rixs_list:
+        if item.omega is None:
+            raise ValueError(
+                "The RIXS file '{}' does not contain incident energies. Pass "
+                "ecore explicitly when loading legacy files.".format(item.file)
+            )
+
+    omega = rixs_list[0].omega
+    if not all(np.array_equal(item.omega, omega) for item in rixs_list):
+        raise ValueError("The RIXS files contain different omega values.")
+    return omega
 
 
 def load_rixs(paths, broad, eloss):
@@ -103,7 +112,7 @@ def calculate_ddcs(paths, broad, eloss, ecore=None, modes="auto", normalize=True
     """
     rixs_list = load_rixs(paths, broad=broad, eloss=eloss)
     modes = _selected_modes(rixs_list, modes)
-    ecore = _require_incident_energies(ecore)
+    ecore = _require_incident_energies(ecore, rixs_list)
     ecore = _match_core_energies(ecore, rixs_list, modes)
     ecoreindex = list(range(len(ecore)))
     result = {}
@@ -134,7 +143,7 @@ def calculate_maps(paths, broad, eloss, ecore=None, modes="auto", grid_scale=10)
     """
     rixs_list = load_rixs(paths, broad=broad, eloss=eloss)
     modes = _selected_modes(rixs_list, modes)
-    ecore = _require_incident_energies(ecore)
+    ecore = _require_incident_energies(ecore, rixs_list)
     ecore = _match_core_energies(ecore, rixs_list, modes)
     grid = np.array([len(eloss) * grid_scale, len(ecore) * grid_scale])
     result = {}
