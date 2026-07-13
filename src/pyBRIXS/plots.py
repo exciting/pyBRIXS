@@ -31,7 +31,7 @@ def read_data_blocks(file_path):
 
     return data_blocks
 
-def plot_blocks(file_path, ax, labels, label, plot_labels=True, line_interval=1, offset=1, color='black'):
+def plot_blocks(file_path, ax, labels, label, plot_labels=True, line_interval=1, offset=1, color='black', fontsize=13):
     data_blocks = read_data_blocks(file_path)
     all_y = []
     for i, block in enumerate(data_blocks):
@@ -49,17 +49,18 @@ def plot_blocks(file_path, ax, labels, label, plot_labels=True, line_interval=1,
 
         if plot_labels:
             y_label = y[-1] + 0.3
-            ax.text(np.max(x)+2, y_label, f"{labels[i]:.1f} eV", verticalalignment='center')
+            ax.text(np.max(x)+2, y_label, f"{labels[i]:.1f} eV", verticalalignment='center', fontsize=fontsize)
     if plot_labels:
         ax.text(-0.04, 0.5, "Normalized Intensity [a.u.]", va='center', ha='center',
-                rotation=90, transform=ax.transAxes)
+                rotation=90, transform=ax.transAxes, fontsize=fontsize)
         ax.yaxis.set_label_position("right")
-        ax.yaxis.set_label_coords(1.15, 0.5)
-        ax.set_ylabel("Excitation Energy [eV]", labelpad=10)
-        ax.set_xlabel("Energy Loss (eV)")
+        label_x = 1.15 + 0.012 * (fontsize - 10)
+        ax.yaxis.set_label_coords(label_x, 0.5)
+        ax.set_ylabel("Excitation Energy [eV]", labelpad=10, fontsize=fontsize)
+        ax.set_xlabel("Energy Loss (eV)", fontsize=fontsize)
             
     ax.set_ylim(min(all_y)-0.2,max(all_y)+(max(all_y)-min(all_y))*0.2)    
-    ax.tick_params(labelleft=False, left=False)
+    ax.tick_params(labelleft=False, left=False, labelsize=fontsize)
 
     handles, legend_labels = ax.get_legend_handles_labels()
     unique_labels = dict(zip(legend_labels, handles))
