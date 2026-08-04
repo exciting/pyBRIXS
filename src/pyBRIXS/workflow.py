@@ -40,7 +40,7 @@ def _require_incident_energies(ecore, rixs_list):
     return omega
 
 
-def load_rixs(paths, broad, eloss):
+def load_rixs(paths, broad, eloss, modes=None):
     """
     Load one or more BRIXS rixs.h5 files and calculate spectra.
 
@@ -48,12 +48,23 @@ def load_rixs(paths, broad, eloss):
         paths: Folders containing rixs.h5, direct rixs.h5 paths, or both.
         broad: Lorentzian broadening in eV.
         eloss: Energy-loss axis in eV.
+        modes: Optional spectrum mode or modes to load. By default all modes
+            present in the files are loaded.
 
     Returns:
         list: Loaded pyBRIXS rixs objects.
     """
     files = find_rixs_files(paths)
-    return [rixs(file=str(file), broad=broad, freq=eloss) for file in files]
+    return [
+        rixs(file=str(file), broad=broad, freq=eloss, modes=modes)
+        for file in files
+    ]
+
+
+def _modes_to_load(modes):
+    if modes in (None, "auto", "all"):
+        return None
+    return modes
 
 
 def available_modes(rixs_list):
@@ -110,7 +121,7 @@ def calculate_ddcs(paths, broad, eloss, ecore=None, modes="auto", normalize=True
         dict: mode -> GetData object. The intensity array is available as
         result[mode].ddcs.
     """
-    rixs_list = load_rixs(paths, broad=broad, eloss=eloss)
+    rixs_list = load_rixs(paths, broad=broad, eloss=eloss, modes=_modes_to_load(modes),)
     modes = _selected_modes(rixs_list, modes)
     ecore = _require_incident_energies(ecore, rixs_list)
     ecore = _match_core_energies(ecore, rixs_list, modes)
@@ -120,13 +131,8 @@ def calculate_ddcs(paths, broad, eloss, ecore=None, modes="auto", normalize=True
     for mode in modes:
         attr, _ = SPECTRUM_MODES[mode]
         spectra = [getattr(r, attr) for r in rixs_list if getattr(r, attr) is not None]
-        result[mode] = GetData(
-            ecore=ecore,
-            eloss=eloss,
-            ecoreindex=ecoreindex,
-            spectrum=spectra,
-            normalize=normalize,
-        )
+        result[mode] = GetData(ecore=ecore, eloss=eloss, ecoreindex=ecoreindex, spectrum=spectra,
+                               normalize=normalize,)
 
     return result
 
@@ -141,7 +147,7 @@ def calculate_maps(paths, broad, eloss, ecore=None, modes="auto", grid_scale=10)
     Returns:
         dict: mode -> analysis object.
     """
-    rixs_list = load_rixs(paths, broad=broad, eloss=eloss)
+    rixs_list = load_rixs(paths, broad=broad, eloss=eloss, modes=_modes_to_load(modes),)
     modes = _selected_modes(rixs_list, modes)
     ecore = _require_incident_energies(ecore, rixs_list)
     ecore = _match_core_energies(ecore, rixs_list, modes)
@@ -151,12 +157,7 @@ def calculate_maps(paths, broad, eloss, ecore=None, modes="auto", grid_scale=10)
     for mode in modes:
         attr, _ = SPECTRUM_MODES[mode]
         selected = [r for r in rixs_list if getattr(r, attr) is not None]
-        result[mode] = analysis.average_rixs(
-            selected,
-            ecore,
-            grid=grid,
-            spectrum_attr=attr,
-        )
+        result[mode] = analysis.average_rixs(selected, ecore, grid=grid, spectrum_attr=attr,)
 
     return result
 

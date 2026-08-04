@@ -190,32 +190,19 @@ def run(cfg_path="input-ddcs.cfg", modes=None, map_output=None):
         settings["map_output"] = map_output
 
     rixs_list = [
-        rixs(file=rixs_file, broad=settings["broad"], freq=settings["eloss"])
+        rixs(file=rixs_file, broad=settings["broad"], freq=settings["eloss"], modes=settings["modes"],)
         for rixs_file in settings["rixs_files"]
     ]
 
     written = []
     for mode in settings["modes"]:
-        if write_ddcs_for_mode(
-            rixs_list,
-            settings["ecore"],
-            settings["eloss"],
-            settings["ecoreindex"],
-            settings["output_file"],
-            mode,
-            normalize=settings["normalize"],
-        ):
+        if write_ddcs_for_mode(rixs_list, settings["ecore"], settings["eloss"], settings["ecoreindex"], 
+                               settings["output_file"], mode, normalize=settings["normalize"],):
             written.append(mode)
 
         if settings["map_output"]:
-            export_map_for_mode(
-                rixs_list,
-                settings["ecore"],
-                settings["eloss"],
-                settings["map_output"],
-                settings["map_grid_scale"],
-                mode,
-            )
+            export_map_for_mode(rixs_list, settings["ecore"], settings["eloss"], settings["map_output"],
+                                settings["map_grid_scale"], mode,)
 
     if not written:
         raise ValueError("No requested DDCS mode was present in the RIXS files.")

@@ -182,8 +182,11 @@ class rixs:
             file (str):  rixs.h5 file path
             broad (float): Optional Lorentzian broadening for RIXS spectra in
             eV.  Defaults to None.
-            freq (np.array): Optional 1D array of frequencies for energy loss in
+        freq (np.array): Optional 1D array of frequencies for energy loss in
             eV.  Defaults to [].
+        modes (str or iterable): Optional spectrum modes to load and generate.
+            Supported values are ``classic``, ``coherent``, and
+            ``incoherent``. By default all available modes are processed.
 
         .. attribute:: w
 
@@ -205,7 +208,7 @@ class rixs:
             of excitation energies, the second one is the number of frequencies
             for the energy loss, i.e. shape(spectrum)[1]=shape(freq)[0].
     """
-    def __init__(self, file=None, broad=None, freq=np.array([])):
+    def __init__(self, file=None, broad=None, freq=np.array([]), modes=None):
         self.delta_e=None
         self.oscstr=None
         self.oscstr_coh=None
@@ -215,6 +218,17 @@ class rixs:
         self.spectrum=None
         self.spectrum_coh=None
         self.spectrum_incoh=None
+        if modes is None or modes == "all":
+            self.modes = {"classic", "coherent", "incoherent"}
+        else:
+            self.modes = {modes} if isinstance(modes, str) else set(modes)
+            unknown = self.modes - {"classic", "coherent", "incoherent"}
+            if unknown:
+                raise ValueError(
+                    "Unknown RIXS spectrum mode(s): {}".format(
+                        ", ".join(sorted(unknown))
+                    )
+                )
         if file != None and broad !=None:
             self.file=file
             self.broad=broad
@@ -226,8 +240,8 @@ class rixs:
         
     def __get_oscstr__(self):
         with h5py.File(self.file) as f:
-            self.energy = np.asarray(list(f["vevals"]))
-            nfreq = len(list(f["oscstr"]))
+            self.energy = np.asarray(f["vevals"])
+            nfreq = len(f["oscstr"])
 
             if "omega" in f:
                 self.omega = np.asarray(f["omega"]["values"])
@@ -249,33 +263,29 @@ class rixs:
                     keys = list(group.keys())
                     # classic
                     normal_keys = [k for k in keys if k not in ("coherent", "incoherent")]
-                    if normal_keys:
+                    if normal_keys and "classic" in self.modes:
                         oscstr_p = []
                         for k in normal_keys:
-                            inter = group[k][0] + 1j * group[k][1]
+                            data = np.asarray(group[k])
+                            inter = data[0] + 1j * data[1]
                             oscstr_p.append(inter)
                         self.oscstr.append(oscstr_p)
 
                     # coherent
-                    if "coherent" in keys:
-                        data = group["coherent"]
+                    if "coherent" in keys and "coherent" in self.modes:
+                        data = np.asarray(group["coherent"])
                         arr = data[:,0] + 1j * data[:,1] 
                         self.oscstr_coh.append(arr)
 
                     # incoherent
-                    if "incoherent" in keys:
-                        data = group["incoherent"]
+                    if "incoherent" in keys and "incoherent" in self.modes:
+                        data = np.asarray(group["incoherent"])
                         arr = data[:,0] + 1j * data[:,1]
                         self.oscstr_incoh.append(arr)
 
-                else:
-                    nexciton=len(list(f['oscstr'][format(i+1,'04d')]))
-                    oscstr_p=[]
-                    for j in range(nexciton):
-                        inter=f['oscstr'][format(i+1,'04d')][j][0]\
-                            +1j*f['oscstr'][format(i+1,'04d')][j][1]
-                        oscstr_p.append(inter)
-                    self.oscstr.append(oscstr_p)
+                elif "classic" in self.modes:
+                    data = np.asarray(group)
+                    self.oscstr.append(data[:, 0] + 1j * data[:, 1])
 
             self.oscstr = np.array(self.oscstr) if self.oscstr else None
             self.oscstr_coh = np.vstack(self.oscstr_coh) if self.oscstr_coh else None
@@ -288,31 +298,30 @@ class rixs:
             osc = self.oscstr_coh
         elif self.oscstr_incoh is not None:
             osc = self.oscstr_incoh
+        else:
+            return
 
+        denominator = (
+            self.w[:, None] / hartree
+            - self.energy[None, :]
+            + 1j * self.broad / hartree
+        )
+        self.delta_e = np.asarray(1.0 / denominator, dtype=np.complex64)
 
-        self.delta_e = np.zeros((self.w.shape[0], osc.shape[1]), dtype=np.complex64)
-        for i in range(self.delta_e.shape[0]):
-            for j in range(self.delta_e.shape[1]):
-                self.delta_e[i,j] = 1.0 / (self.w[i]/hartree - self.energy[j] + 1j*self.broad/hartree)
+    def _generate_spectrum(self, oscstr):
+        """Generate all incident-energy spectra in one matrix operation."""
+        weights = np.abs(oscstr) ** 2
+        return -np.matmul(weights, self.delta_e.T).imag
 
     def gen_spectrum(self):
         if self.oscstr is not None:
-            self.spectrum = np.zeros((self.oscstr.shape[0], self.w.shape[0]))
-            for i in range(self.spectrum.shape[0]):
-                self.spectrum[i,:] = \
-                    -1.0*np.matmul(self.delta_e, np.abs(self.oscstr[i,:])**2).imag
+            self.spectrum = self._generate_spectrum(self.oscstr)
 
         if self.oscstr_coh is not None:
-            self.spectrum_coh = np.zeros((self.oscstr_coh.shape[0], self.w.shape[0]))
-            for i in range(self.spectrum_coh.shape[0]):
-                self.spectrum_coh[i,:] = \
-                    -1.0*np.matmul(self.delta_e, np.abs(self.oscstr_coh[i,:])**2).imag
+            self.spectrum_coh = self._generate_spectrum(self.oscstr_coh)
 
         if self.oscstr_incoh is not None:
-            self.spectrum_incoh = np.zeros((self.oscstr_incoh.shape[0], self.w.shape[0]))
-            for i in range(self.spectrum_incoh.shape[0]):
-                self.spectrum_incoh[i,:] = \
-                    -1.0*np.matmul(self.delta_e, np.abs(self.oscstr_incoh[i,:])**2).imag
+            self.spectrum_incoh = self._generate_spectrum(self.oscstr_incoh)
 
     
     def gen_emission_en(self,w_core):
