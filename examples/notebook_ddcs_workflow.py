@@ -3,7 +3,7 @@
 #
 # Minimal workflow for a notebook:
 #
-# - use `calculate_ddcs(...)` for spectra,
+# - use `calculate_or_load_ddcs(...)` for cached spectra,
 # - use `calculate_maps(...)` only when an interpolated RIXS map is needed.
 
 # %%
@@ -13,9 +13,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from pyBRIXS.workflow import (
-    calculate_ddcs,
+    calculate_or_load_ddcs,
     calculate_or_load_maps,
-    write_ddcs,
 )
 
 
@@ -54,21 +53,25 @@ ecore = np.array([653.0, 654.0, 655.0, 656.0])
 
 
 # %% [markdown]
-# ## 3. Calculate DDCS spectra
+# ## 3. Calculate or load DDCS spectra
 #
 # No interpolation happens here. The result is a dictionary:
 #
 # - `ddcs["classic"]` for normal BRIXS output,
 # - `ddcs["coherent"]` and `ddcs["incoherent"]` for coherence output.
+#
+# A matching `.npz` cache is loaded on later calls. A fresh calculation writes
+# both the cache and the established DDCS text format.
 
 # %%
-ddcs = calculate_ddcs(
+ddcs = calculate_or_load_ddcs(
     rixs_files,
     broad=broad,
     eloss=eloss,
     ecore=ecore,
     modes="auto",
     normalize=True,
+    output_base="ddcs_vs_loss",
 )
 
 ddcs.keys()
@@ -90,17 +93,7 @@ plt.tight_layout()
 
 
 # %% [markdown]
-# ## 5. Optional: write DDCS files
-#
-# This creates the same style of text files as `pyBRIXS-ddcs`.
-
-# %%
-written_files = write_ddcs(ddcs, output_base="ddcs_vs_loss")
-written_files
-
-
-# %% [markdown]
-# ## 6. Optional: calculate RIXS maps
+# ## 5. Optional: calculate RIXS maps
 #
 # Maps require interpolation. Use this only when you want a 2D map.
 

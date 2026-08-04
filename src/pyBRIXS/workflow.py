@@ -20,6 +20,8 @@ def find_rixs_files(paths):
         if not path.exists():
             raise FileNotFoundError("Could not find '{}'.".format(path))
         files.append(path)
+    if not files:
+        raise ValueError("No RIXS files were provided.")
     return files
 
 
@@ -111,7 +113,15 @@ def _match_core_energies(ecore, rixs_list, modes):
     return ecore[:nrows]
 
 
-def calculate_ddcs(paths, broad, eloss, ecore=None, modes="auto", normalize=True):
+def calculate_ddcs(
+    paths,
+    broad,
+    eloss,
+    ecore=None,
+    modes="auto",
+    normalize=True,
+    output_base=None,
+):
     """
     Calculate averaged DDCS curves without interpolation.
 
@@ -120,21 +130,206 @@ def calculate_ddcs(paths, broad, eloss, ecore=None, modes="auto", normalize=True
     Returns:
         dict: mode -> GetData object. The intensity array is available as
         result[mode].ddcs.
+
+    If output_base is given, both compressed ``.npz`` cache files and the
+    established DDCS text files are written automatically.
     """
     rixs_list = load_rixs(paths, broad=broad, eloss=eloss, modes=_modes_to_load(modes),)
     modes = _selected_modes(rixs_list, modes)
     ecore = _require_incident_energies(ecore, rixs_list)
     ecore = _match_core_energies(ecore, rixs_list, modes)
     ecoreindex = list(range(len(ecore)))
+    source_files = tuple(str(Path(item.file).resolve()) for item in rixs_list)
+    source_mtime_ns = tuple(Path(item.file).stat().st_mtime_ns for item in rixs_list)
+    source_sizes = tuple(Path(item.file).stat().st_size for item in rixs_list)
     result = {}
 
     for mode in modes:
         attr, _ = SPECTRUM_MODES[mode]
         spectra = [getattr(r, attr) for r in rixs_list if getattr(r, attr) is not None]
-        result[mode] = GetData(ecore=ecore, eloss=eloss, ecoreindex=ecoreindex, spectrum=spectra,
-                               normalize=normalize,)
+        ddcs = GetData(ecore=ecore, eloss=eloss, ecoreindex=ecoreindex, spectrum=spectra,
+                       normalize=normalize,)
+        ddcs.broad = broad
+        ddcs.source_files = source_files
+        ddcs.source_mtime_ns = source_mtime_ns
+        ddcs.source_sizes = source_sizes
+        result[mode] = ddcs
+
+    if output_base is not None:
+        export_ddcs(result, output_base=output_base)
+        write_ddcs(result, output_base=output_base)
 
     return result
+
+
+def export_ddcs(ddcs_by_mode, output_base="ddcs"):
+    """Save DDCS results as compressed NumPy cache files."""
+    if hasattr(ddcs_by_mode, "ddcs"):
+        ddcs_by_mode = {"classic": ddcs_by_mode}
+
+    written = []
+    cached_modes = np.asarray(list(ddcs_by_mode), dtype=str)
+    for mode, ddcs in ddcs_by_mode.items():
+        if mode not in SPECTRUM_MODES:
+            raise ValueError("Unknown DDCS mode: {}".format(mode))
+        _, suffix = SPECTRUM_MODES[mode]
+        output_file = Path("{}{}.npz".format(output_base, suffix))
+        np.savez_compressed(
+            output_file,
+            ecore=ddcs.ecore,
+            eloss=ddcs.eloss,
+            ddcs=ddcs.ddcs,
+            ecoreindex=np.asarray(ddcs.ecoreindex, dtype=int),
+            normalize=np.asarray(ddcs.normalize, dtype=bool),
+            broad=np.asarray(getattr(ddcs, "broad", np.nan), dtype=float),
+            source_files=np.asarray(getattr(ddcs, "source_files", ()), dtype=str),
+            source_mtime_ns=np.asarray(
+                getattr(ddcs, "source_mtime_ns", ()), dtype=np.int64
+            ),
+            source_sizes=np.asarray(
+                getattr(ddcs, "source_sizes", ()), dtype=np.int64
+            ),
+            cached_modes=cached_modes,
+        )
+        written.append(output_file)
+    return written
+
+
+def load_ddcs(input_base="ddcs", modes="auto"):
+    """Load DDCS results written by :func:`export_ddcs`."""
+    require_all = modes not in (None, "auto", "all")
+    if not require_all:
+        modes = list(SPECTRUM_MODES)
+    elif isinstance(modes, str):
+        modes = [modes]
+
+    unknown = [mode for mode in modes if mode not in SPECTRUM_MODES]
+    if unknown:
+        raise ValueError("Unknown DDCS mode(s): {}".format(", ".join(unknown)))
+
+    results = {}
+    missing = []
+    for mode in modes:
+        _, suffix = SPECTRUM_MODES[mode]
+        input_file = Path("{}{}.npz".format(input_base, suffix))
+        if not input_file.exists():
+            missing.append(input_file)
+            continue
+
+        with np.load(input_file, allow_pickle=False) as data:
+            result = GetData.from_arrays(
+                ecore=data["ecore"],
+                eloss=data["eloss"],
+                ddcs=data["ddcs"],
+                ecoreindex=data["ecoreindex"],
+                normalize=data["normalize"].item(),
+            )
+            result.broad = data["broad"].item() if "broad" in data else np.nan
+            result.source_files = (
+                tuple(data["source_files"].tolist()) if "source_files" in data else ()
+            )
+            result.source_mtime_ns = (
+                tuple(data["source_mtime_ns"].tolist())
+                if "source_mtime_ns" in data else ()
+            )
+            result.source_sizes = (
+                tuple(data["source_sizes"].tolist()) if "source_sizes" in data else ()
+            )
+            result.cached_modes = (
+                tuple(data["cached_modes"].tolist()) if "cached_modes" in data else (mode,)
+            )
+        results[mode] = result
+
+    if not results:
+        raise FileNotFoundError(
+            "No DDCS cache files found. Checked: {}".format(
+                ", ".join(str(path) for path in missing)
+            )
+        )
+    if require_all and missing:
+        raise FileNotFoundError(
+            "Missing requested DDCS cache file(s): {}".format(
+                ", ".join(str(path) for path in missing)
+            )
+        )
+    return results
+
+
+def _ddcs_cache_matches(results, paths, broad, eloss, ecore, modes, normalize):
+    files = find_rixs_files(paths)
+    source_files = tuple(str(path.resolve()) for path in files)
+    source_mtime_ns = tuple(path.stat().st_mtime_ns for path in files)
+    source_sizes = tuple(path.stat().st_size for path in files)
+    expected_eloss = np.asarray(eloss)
+    expected_ecore = None if ecore is None else np.asarray(ecore)
+    cached_modes = set(next(iter(results.values())).cached_modes)
+    if modes in (None, "auto", "all") and set(results) != cached_modes:
+        return False
+
+    for result in results.values():
+        if not np.array_equal(result.eloss, expected_eloss):
+            return False
+        if expected_ecore is not None:
+            if len(expected_ecore) < len(result.ecore):
+                return False
+            if not np.array_equal(result.ecore, expected_ecore[:len(result.ecore)]):
+                return False
+        if result.normalize != bool(normalize):
+            return False
+        if not np.isfinite(result.broad) or result.broad != broad:
+            return False
+        if result.source_files != source_files:
+            return False
+        if result.source_mtime_ns != source_mtime_ns:
+            return False
+        if result.source_sizes != source_sizes:
+            return False
+    return True
+
+
+def calculate_or_load_ddcs(
+    paths,
+    broad,
+    eloss,
+    ecore=None,
+    modes="auto",
+    normalize=True,
+    output_base="ddcs",
+    force=False,
+):
+    """Load a matching DDCS cache or calculate and write both output formats."""
+    files = find_rixs_files(paths)
+    if not force:
+        try:
+            cached = load_ddcs(output_base, modes=modes)
+            if _ddcs_cache_matches(
+                cached,
+                paths=files,
+                broad=broad,
+                eloss=eloss,
+                ecore=ecore,
+                modes=modes,
+                normalize=normalize,
+            ):
+                missing_text = any(
+                    not Path("{}{}".format(output_base, SPECTRUM_MODES[mode][1])).exists()
+                    for mode in cached
+                )
+                if missing_text:
+                    write_ddcs(cached, output_base=output_base)
+                return cached
+        except FileNotFoundError:
+            pass
+
+    return calculate_ddcs(
+        files,
+        broad=broad,
+        eloss=eloss,
+        ecore=ecore,
+        modes=modes,
+        normalize=normalize,
+        output_base=output_base,
+    )
 
 
 def calculate_maps(paths, broad, eloss, ecore=None, modes="auto", grid_scale=10):

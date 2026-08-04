@@ -36,6 +36,34 @@ class GetData:
 
         self.get_ddcs()
 
+    @classmethod
+    def from_arrays(cls, ecore, eloss, ddcs, ecoreindex=None, normalize=False):
+        """Create a DDCS result from already calculated array data."""
+        instance = cls.__new__(cls)
+        instance.ecore = np.asarray(ecore)
+        instance.eloss = np.asarray(eloss)
+        instance.ddcs = np.asarray(ddcs)
+        if ecoreindex is None:
+            ecoreindex = np.arange(instance.ddcs.shape[0])
+        instance.ecoreindex = [int(index) for index in ecoreindex]
+        instance.spectrum = None
+        instance.normalize = bool(normalize)
+
+        expected_shape = (len(instance.ecoreindex), len(instance.eloss))
+        if instance.ddcs.shape != expected_shape:
+            raise ValueError(
+                "DDCS data has shape {}, expected {}.".format(
+                    instance.ddcs.shape, expected_shape
+                )
+            )
+        if instance.ecoreindex and max(instance.ecoreindex) >= len(instance.ecore):
+            raise ValueError("ecoreindex contains an index outside the ecore range.")
+
+        instance.emission = (
+            instance.ecore[instance.ecoreindex, None] - instance.eloss[None, :]
+        )
+        return instance
+
     def get_ddcs(self):
         """
         Calculate the DDCS for each spectrum, or the mean DDCS if multiple spectra are given.
